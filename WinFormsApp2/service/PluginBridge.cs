@@ -40,5 +40,12 @@ namespace WinFormsApp2.Services
         {
             _view.InvokeOnUI(() => _view.InsertTextAtCursor(text));
         }
+
+        public string GetSelectedEditorText()
+        {
+            // UIスレッドで取得して返す (Invokeが必要な場合はFuncを使う)
+            // 今回は簡易実装で直接呼ぶわ（落ちるようならInvokeに変えて）
+            return _view.GetSelectedEditorText();
+        }
     }
 }

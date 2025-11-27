@@ -732,6 +732,7 @@ namespace WinFormsApp2.Presenters
                 _backupTimer.Change(Timeout.Infinite, Timeout.Infinite); // 停止
                 _backupTimer.Dispose(); // 破棄
                 _backupTimer = null;
+                _pluginManager.Dispose();
             }
 
             // ※ Serviceクラスなどが IDisposable を持っているなら、ここですべて呼ぶ

@@ -18,5 +18,9 @@ namespace SamplePlugin
                 app.ShowMessage("日付を入れました！");
             });
         }
+        public void Dispose()
+        {
+            //なし
+        }
     }
 }

@@ -110,6 +110,8 @@ namespace WinFormsApp2.Views
         Task ExportPdfToPath(string path);
         public void AddPluginMenu(string path, string text, EventHandler action);
 
+        public string GetSelectedEditorText();
+
     }
 
     // ツリー表示用の軽量なデータモデル（ViewModel的なもの）

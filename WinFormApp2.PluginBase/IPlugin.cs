@@ -1,6 +1,6 @@
 ﻿namespace WinFormApp2.PluginBase
 {
-    public interface IPlugin
+    public interface IPlugin: IDisposable
     {
         // プラグインの名前
         string Name { get; }

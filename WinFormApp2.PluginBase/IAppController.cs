@@ -13,6 +13,8 @@ namespace WinFormApp2.PluginBase
         string GetCurrentEditorText();
         void InsertTextAtCursor(string text);
 
+        string GetSelectedEditorText();
+
         // 今後ここに必要な機能をどんどん足していくのよ
     }
 }

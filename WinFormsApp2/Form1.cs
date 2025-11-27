@@ -58,26 +58,8 @@ namespace WinFormsApp2
             string initialPath = settings.LastWorkspacePath ?? Directory.GetCurrentDirectory();
 
             this.Load += Form1_Load;
-            // 4. 手書きUIの構築 (Designer.csから救出したコード)
             InitializeCustomUI();
-            /*
-            // ★ UI構築後に設定をロードして適用！
-            ApplySettings();
-
-            // 5. イベント購読と初期データロード
-            SetupEvents();
-            LoadFileTree();
-
-            // Form1.cs のコンストラクタ または LoadFileTree() の後あたり
-
-            // 起動時にダッシュボード更新
-            UpdateDashboardWithToday();
-
-            CheckForBackups();
-
-            // 6. ウェルカムドキュメントの表示
-            OpenWelcomeDocument();
-            */
+            
         }
 
         // IMainViewの実装部分
@@ -142,22 +124,7 @@ namespace WinFormsApp2
         }
 
         // ヘルパーメソッド: モデルからTreeNodeを再帰的に作る
-        private TreeNode CreateTreeNode(FileNodeModel model)
-        {
-            TreeNode node = new TreeNode(model.Name);
-            node.Tag = model.FullPath; // ★重要: クリック時にパスを取り出すため
-
-            // アイコンを変えるならここで設定
-            node.ImageKey = model.IsDirectory ? "folder" : "file";
-            // 子要素があれば再帰的に追加
-            foreach (var childModel in model.Children)
-            {
-                TreeNode childNode = CreateTreeNode(childModel);
-                node.Nodes.Add(childNode);
-            }
-
-            return node;
-        }
+        
         // 3. タブ操作
         public void OpenDocumentTab(MarkdownDocument document)
         {
@@ -259,293 +226,30 @@ namespace WinFormsApp2
             SaveRequested?.Invoke(this, EventArgs.Empty);
         }
 
-        /// <summary>
-        /// Designer.cs に書かれていた手書きコードをここに隔離したわ。
-        /// これでデザイナーが壊れる心配はない。
-        /// </summary>
-        private void InitializeCustomUI()
-        {
-            // --- MenuStrip ---
-            this.mainMenuStrip = new MenuStrip { Dock = DockStyle.Top };
-            this.Controls.Add(this.mainMenuStrip);
-            SetupMenu(); // メニュー構築ロジックも分離
-
-            // --- Splitters ---
-            this.outerSplitter = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 300, FixedPanel = FixedPanel.Panel1 };
-            this.Controls.Add(this.outerSplitter);
-            this.outerSplitter.BringToFront();
-
-            this.leftSplitter = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 200 };
-            this.outerSplitter.Panel1.Controls.Add(this.leftSplitter);
-
-            this.innerSplitter = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 700, FixedPanel = FixedPanel.Panel2 };
-            this.outerSplitter.Panel2.Controls.Add(this.innerSplitter);
-
-            // --- Left Panel Controls (Calendar / Tree) ---
-            this.CalendarTitleLabel = CreateHeaderLabel("📅 カレンダー内容");
-            this.leftSplitter.Panel1.Controls.Add(this.CalendarTitleLabel);
-
-            this.calendarControl = new DarkCalendar { Dock = DockStyle.Fill };
-            this.calendarControl.DateSelected += CalendarControl_DateSelected;
-            this.leftSplitter.Panel1.Controls.Add(this.calendarControl);
-            this.calendarControl.BringToFront();
-
-            //this.DirectoryTitleLabel = CreateHeaderLabel("📂 ノートディレクトリ");
-            //this.leftSplitter.Panel2.Controls.Add(this.DirectoryTitleLabel);
-            // 1. ヘッダーパネル作成
-            _dirHeaderPanel = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 30,
-                BackColor = Color.LightCyan, // 初期色
-                Padding = new Padding(0)
-            };
-
-            // 2. 更新ボタン作成 (右寄せ)
-            _refreshTreeButton = new Button
-            {
-                Text = "↻", // リロード記号
-                Dock = DockStyle.Right,
-                Width = 30,
-                FlatStyle = FlatStyle.Flat,
-                Cursor = Cursors.Hand,
-                Font = new Font("Segoe UI Symbol", 12F, FontStyle.Bold) // 記号が綺麗に出るフォント
-            };
-            _refreshTreeButton.FlatAppearance.BorderSize = 0;
-            _refreshTreeButton.Click += (s, e) => FileTreeRefreshRequested?.Invoke(this, EventArgs.Empty); // イベント発火
-
-            // 3. タイトルラベル作成 (残りスペースを埋める)
-            _dirTitleLabel = new Label
-            {
-                Text = "📂 ノートディレクトリ",
-                Dock = DockStyle.Fill,
-                Font = new Font("Meiryo UI", 11F, FontStyle.Bold),
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(5, 0, 0, 0)
-            };
-
-            // 4. パネルに配置 (Dock=Rightのボタンを先に追加するのがコツよ)
-            _dirHeaderPanel.Controls.Add(_refreshTreeButton);
-            _dirHeaderPanel.Controls.Add(_dirTitleLabel);
-
-            // 5. 左ペインに追加
-            this.leftSplitter.Panel2.Controls.Add(_dirHeaderPanel);
-            this.directoryTreeView = new TreeView { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None };
-            this.directoryTreeView.NodeMouseClick += DirectoryTreeView_NodeMouseClick;
-            this.leftSplitter.Panel2.Controls.Add(this.directoryTreeView);
-            this.directoryTreeView.BringToFront();
-
-            // --- Center Panel (Tab & Editor) ---
-            this.noteTabControl = new ClosableTabControl { Dock = DockStyle.Top, Height = 25, Padding = new Point(10, 3) };
-            this.innerSplitter.Panel1.Controls.Add(this.noteTabControl);
-            this.noteTabControl.Deselecting += NoteTabControl_Deselecting;
-            this.noteTabControl.SelectedIndexChanged += NoteTabControl_SelectedIndexChanged;
-            // NoteEditorPanelの生成
-            this.noteEditorPanel = new NoteEditorPanel { Dock = DockStyle.Fill, Padding = new Padding(0, 30, 0, 0) };
-            this.innerSplitter.Panel1.Controls.Add(this.noteEditorPanel);
-            this.noteEditorPanel.DocumentContentChanged += NoteEditorPanel_DocumentContentChanged; 
-            this.noteEditorPanel.ImagePasteRequested += (s, img) => ImagePasteRequested?.Invoke(this, img);
-            //this.noteEditorPanel.BringToFront(); // タブより手前に来ないように注意、順序はAdd順に依存するが念のため確認が必要
-
-            // --- Right Panel (Info) ---
-            //this.rightInfoPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.MistyRose, Padding = new Padding(10) };
-            //this.rightInfoPanel.Controls.Add(new Label { Text = "本日の予定", Dock = DockStyle.Top, Font = new Font("Meiryo UI", 12F, FontStyle.Bold), Height = 30 });
-            //this.innerSplitter.Panel2.Controls.Add(this.rightInfoPanel);
-            this.dashboardPanel = new DashboardPanel
-            {
-                Dock = DockStyle.Fill,
-                BorderStyle = BorderStyle.FixedSingle
-            };
-
-            this.innerSplitter.Panel2.Controls.Add(this.dashboardPanel);
-            this.searchTextBox = new ToolStripTextBox();
-            this.searchTextBox.Alignment = ToolStripItemAlignment.Right;
-            this.searchTextBox.Size = new Size(200, 25);
-            this.searchTextBox.Text = "検索...";
-            this.searchTextBox.ForeColor = Color.Gray;
-
-            // Enterキーで検索
-            this.searchTextBox.KeyDown += (s, e) =>
-            {
-                if (e.KeyCode == Keys.Enter && !string.IsNullOrWhiteSpace(this.searchTextBox.Text))
-                {
-                    GlobalSearchRequested?.Invoke(this, this.searchTextBox.Text);
-                    e.SuppressKeyPress = true;
-                }
-            };
-
-            // プレースホルダー処理
-            this.searchTextBox.Enter += (s, e) => { if (this.searchTextBox.Text == "検索...") { this.searchTextBox.Text = ""; this.searchTextBox.ForeColor = _searchBoxTextColor; } };
-            this.searchTextBox.Leave += (s, e) => { if (string.IsNullOrWhiteSpace(this.searchTextBox.Text)) { this.searchTextBox.Text = "検索..."; this.searchTextBox.ForeColor = Color.Gray; } };
-
-            // ★追加: ×ボタン
-            this.clearButton = new ToolStripButton("×");
-            clearButton.Alignment = ToolStripItemAlignment.Right;
-            clearButton.ToolTipText = "検索をクリアして閉じる";
-            clearButton.DisplayStyle = ToolStripItemDisplayStyle.Text; // 文字のみ表示
-            clearButton.Font = new Font("Segoe UI", 9F, FontStyle.Bold); // 太字で見やすく
-
-            // クリックイベント
-            clearButton.Click += (s, e) =>
-            {
-                SearchClearRequested?.Invoke(this, EventArgs.Empty);
-            };
-
-            // 順番が大事よ。「右寄せ」同士の場合、先に追加した方が「より右」に行くか「左」に来るかはライブラリ次第だけど、
-            // 通常は Right属性のアイテムは追加順に左へ並んでいくことが多いわ。
-            // [×] [検索ボックス] という並びにしたいなら、×を先に追加するか、順序を調整して。
-            // ここでは [検索ボックス] [×] の順に左から並ぶように、追加順序を意識するわ。
-
-            this.mainMenuStrip.Items.Add(clearButton); // 先に×を追加（一番右）
-            this.mainMenuStrip.Items.Add(this.searchTextBox); // 次に検索箱（その左）
-
-
-            this.statusStrip = new StatusStrip();
-            this.statusLabel = new ToolStripStatusLabel
-            {
-                Text = "Ready",
-                TextAlign = ContentAlignment.MiddleLeft
-            };
-            this.statusStrip.Items.Add(this.statusLabel);
-
-            // フォームに追加（Dock=Bottomなので、他のコントロールより先に追加してもいいけど、
-            // WinFormsのDock順序は「後から追加したものが内側」になるから、
-            // 最下部に張り付けたいなら、他のDock=Fillなコントロールより「前」に追加しないと隠れる可能性があるわ。
-            // でも一番安全なのは、Controls.Add の順番を最後にすることね。）
-
-            this.Controls.Add(this.statusStrip);
-            // ※もしステータスバーが埋もれて見えない場合は、
-            //this.Controls.SetChildIndex(this.statusStrip, 0); //などを試して最前面に持ってくること。
-            // --- イベント購読 ---
-            // ダッシュボードのリンククリックを中継
-            this.dashboardPanel.LinkClicked += (s, path) => DashboardLinkClicked?.Invoke(this, path);
-            this.FormClosing += Form1_FormClosing;
-            // 1. マネージャー初期化
-            /**
-            // 2. 自動バックアップタイマーの設定
-            autoBackupTimer = new System.Windows.Forms.Timer();
-            autoBackupTimer.Interval = 60000; // 60秒ごとに実行（お好みで短くしてもいいわ）
-            autoBackupTimer.Tick += AutoBackupTimer_Tick;
-            autoBackupTimer.Start();
-            */
-        }
-
-        private void SetupMenu()
-        {
-            var fileMenu = new ToolStripMenuItem("ファイル(&F)");
-            this.mainMenuStrip.Items.Add(fileMenu);
-
-            var newItem = new ToolStripMenuItem("新規作成(&N)") { ShortcutKeys = Keys.Control | Keys.N };
-            newItem.Click += (s, e) => OpenNewDocument();
-            fileMenu.DropDownItems.Add(newItem);
-
-            var saveItem = new ToolStripMenuItem("上書き保存(&S)") { ShortcutKeys = Keys.Control | Keys.S };
-            saveItem.Click += (s, e) => SaveActiveDocument(false); // ★ここが重要：共通メソッドを呼ぶ
-            fileMenu.DropDownItems.Add(saveItem);
-
-            var saveAsItem = new ToolStripMenuItem("名前を付けて保存(&A)");
-            saveAsItem.Click += (s, e) => SaveActiveDocument(true); // ★ここが重要：共通メソッドを呼ぶ
-            fileMenu.DropDownItems.Add(saveAsItem);
-
-            var openFolderItem = new ToolStripMenuItem("フォルダを開く...(&O)");
-            // ショートカットは Ctrl+K, Ctrl+O などが一般的だけど、シンプルに Ctrl+Shift+O とかでもいいわ
-            openFolderItem.ShortcutKeys = Keys.Control | Keys.Shift | Keys.O;
-            openFolderItem.Click += OpenWorkspaceFolder;
-            fileMenu.DropDownItems.Add(openFolderItem); // ファイルメニューに追加
-
-            var exportMenu = new ToolStripMenuItem("エクスポート(&E)");
-            var htmlItem = new ToolStripMenuItem("HTMLとして保存...");
-            var pdfItem = new ToolStripMenuItem("PDFとして保存...");
-
-            htmlItem.Click += (s, e) => ExportHtmlRequested?.Invoke(this, EventArgs.Empty);
-            pdfItem.Click += (s, e) => ExportPdfRequested?.Invoke(this, EventArgs.Empty);
-
-            exportMenu.DropDownItems.Add(htmlItem);
-            exportMenu.DropDownItems.Add(pdfItem);
-            fileMenu.DropDownItems.Add(exportMenu); // ファイルメニューの中に入れる
-
-            fileMenu.DropDownItems.Add(new ToolStripSeparator());
-            var exitItem = new ToolStripMenuItem("終了(&X)");
-            exitItem.Click += (s, e) => this.Close();
-            fileMenu.DropDownItems.Add(exitItem);
-
-            // --- 表示メニュー ---
-            var viewMenu = new ToolStripMenuItem("表示(&V)");
-            this.mainMenuStrip.Items.Add(viewMenu);
-
-            // フォントサイズ拡大
-            var zoomInItem = new ToolStripMenuItem("フォント拡大(&I)") { ShortcutKeys = Keys.Control | Keys.Oemplus }; // Ctrl + '+'
-            zoomInItem.Click += (s, e) => ChangeFontSize(2.0f);
-            viewMenu.DropDownItems.Add(zoomInItem);
-
-            // フォントサイズ縮小
-            var zoomOutItem = new ToolStripMenuItem("フォント縮小(&O)") { ShortcutKeys = Keys.Control | Keys.OemMinus }; // Ctrl + '-'
-            zoomOutItem.Click += (s, e) => ChangeFontSize(-2.0f);
-            viewMenu.DropDownItems.Add(zoomOutItem);
-
-            var themechange = new ToolStripMenuItem("テーマ変更");
-            themechange.Click += (s, e) => { ThemeChanged?.Invoke(s, e); };
-            viewMenu.DropDownItems.Add(themechange);
-
-        }
+        
         // 1. UI部品を作るだけのヘルパーメソッド (これはViewにあって正解)
-        private Label CreateHeaderLabel(string text)
-        {
-            return new Label
-            {
-                Text = text,
-                Dock = DockStyle.Top,
-                Font = new Font("Meiryo UI", 11F, FontStyle.Bold),
-                Padding = new Padding(5),
-                AutoSize = false,
-                Height = 30,
-                BackColor = Color.LightCyan,
-                TextAlign = ContentAlignment.MiddleLeft
-            };
-        }
+        
 
         // 2. フォントサイズ変更 (UI操作なのでViewにあってOK)
-        private void ChangeFontSize(float delta)
-        {
-            float current = noteEditorPanel.GetFontSize();
-            noteEditorPanel.SetFontSize(current + delta);
-        }
+        
 
         // 3. ロジック呼び出しのスタブ (Presenterへの橋渡し)
 
         // 保存処理
-        private void SaveActiveDocument(bool forceSaveAs)
-        {
-            // 本来は forceSaveAs の情報をPresenterに渡すべきだけど、
-            // 今はとりあえず「保存」イベントを発火させるわ
-            SaveRequested?.Invoke(this, EventArgs.Empty);
-        }
+       
 
         // 新規作成
-        private void OpenNewDocument()
-        {
-            // Presenterに「新しい紙をちょうだい！」と頼む
-            NewFileRequested?.Invoke(this, EventArgs.Empty);
-        }
+        
 
        
 
 
         // カレンダー選択
         // カレンダー選択イベントハンドラ
-        private void CalendarControl_DateSelected(object? sender, DateTime date)
-        {
-            // Presenterに「この日が選ばれたわよ！」と伝えるだけ。
-            // ファイルがあるかとか、テンプレートがどうとか、一切考えない。
-            DateSelected?.Invoke(this, date);
-        }
+        
 
         // 自動バックアップタイマー
-        private void AutoBackupTimer_Tick(object? sender, EventArgs e)
-        {
-            // 自動保存も「保存リクエスト」の一種とみなしてPresenterに通知
-            SaveRequested?.Invoke(this, EventArgs.Empty);
-        }
+
         public MarkdownDocument? GetActiveDocument()
         {
             if (noteTabControl.SelectedTab != null && noteTabControl.SelectedTab.Tag is MarkdownDocument doc)
@@ -572,39 +276,15 @@ namespace WinFormsApp2
             return null; // キャンセル時
         }
 
-        private void NoteTabControl_Deselecting(object? sender, TabControlCancelEventArgs e)
-        {
-            // 1. 離れるタブのドキュメントを取得
-            if (e.TabPage?.Tag is MarkdownDocument doc)
-            {
-                // 2. エディタの最新内容をドキュメントに書き戻す（これを忘れると編集が消える！）
-                string currentText = noteEditorPanel.GetCurrentEditorText();
-                doc.UpdateContent(currentText);
-            }
-        }
+        
 
-        private void NoteTabControl_SelectedIndexChanged(object? sender, EventArgs e)
-        {
-            // 1. 新しく選ばれたタブのドキュメントを取得
-            if (noteTabControl.SelectedTab?.Tag is MarkdownDocument doc)
-            {
-                // 2. ドキュメントの内容をエディタに表示
-                noteEditorPanel.DisplayDocument(doc);
-
-                // 3. Presenterに報告「切り替わったわよ」
-                ActiveDocumentChanged?.Invoke(this, EventArgs.Empty);
-            }
-        }
+        
 
         public void UpdateDashboard(string title, string content)
         {
             dashboardPanel.UpdateDashboard(title, content);
         }
-        private void NoteEditorPanel_DocumentContentChanged(object? sender, EventArgs e)
-        {
-            // Presenterに「文字が変わったわよ」と伝える
-            EditorContentChanged?.Invoke(this, EventArgs.Empty);
-        }
+        
         public bool TrySelectTab(string filePath)
         {
             // 正規化（念のためフルパスにしておく）
@@ -676,12 +356,7 @@ namespace WinFormsApp2
         }
         // 1. 終了リクエストのイベント発火
         // (Designerのプロパティ画面で、FormClosingイベントにこのメソッドを割り当てるか、コンストラクタで += すること！)
-        private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
-        {
-            // Presenterに「閉じていいか？」と聞く。
-            // 引数の e (CancelEventArgs) を渡すことで、Presenter側で e.Cancel = true できるようにする。
-            CloseRequested?.Invoke(this, e);
-        }
+        
 
         // 2. 設定の適用 (起動時)
         public void SetWindowSettings(AppSettings settings)
@@ -899,11 +574,7 @@ namespace WinFormsApp2
         }
 
         // メニュークリック時のイベント
-        private void OpenWorkspaceFolder(object? sender, EventArgs e)
-        {
-            // MessageBox... は削除して、イベント発火！
-            ChangeFolderRequested?.Invoke(this, EventArgs.Empty);
-        }
+        
 
         // Form1.cs
 
@@ -965,5 +636,175 @@ namespace WinFormsApp2
             item.Click += action;
             pluginMenu.DropDownItems.Add(item);
         }
+        public string GetSelectedEditorText()
+        {
+            // NoteEditorPanel -> EditorTextBox (ExRichTextBox) -> SelectedText
+            return noteEditorPanel.EditorTextBox.SelectedText;
+        }
+
+        /*
+        /// <summary>
+        /// Designer.cs に書かれていた手書きコードをここに隔離したわ。
+        /// これでデザイナーが壊れる心配はない。
+        /// </summary>
+        private void InitializeCustomUI()
+        {
+            // --- MenuStrip ---
+            this.mainMenuStrip = new MenuStrip { Dock = DockStyle.Top };
+            this.Controls.Add(this.mainMenuStrip);
+            SetupMenu(); // メニュー構築ロジックも分離
+
+            // --- Splitters ---
+            this.outerSplitter = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 300, FixedPanel = FixedPanel.Panel1 };
+            this.Controls.Add(this.outerSplitter);
+            this.outerSplitter.BringToFront();
+
+            this.leftSplitter = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 200 };
+            this.outerSplitter.Panel1.Controls.Add(this.leftSplitter);
+
+            this.innerSplitter = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 700, FixedPanel = FixedPanel.Panel2 };
+            this.outerSplitter.Panel2.Controls.Add(this.innerSplitter);
+
+            // --- Left Panel Controls (Calendar / Tree) ---
+            this.CalendarTitleLabel = CreateHeaderLabel("📅 カレンダー内容");
+            this.leftSplitter.Panel1.Controls.Add(this.CalendarTitleLabel);
+
+            this.calendarControl = new DarkCalendar { Dock = DockStyle.Fill };
+            this.calendarControl.DateSelected += CalendarControl_DateSelected;
+            this.leftSplitter.Panel1.Controls.Add(this.calendarControl);
+            this.calendarControl.BringToFront();
+
+            //this.DirectoryTitleLabel = CreateHeaderLabel("📂 ノートディレクトリ");
+            //this.leftSplitter.Panel2.Controls.Add(this.DirectoryTitleLabel);
+            // 1. ヘッダーパネル作成
+            _dirHeaderPanel = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 30,
+                BackColor = Color.LightCyan, // 初期色
+                Padding = new Padding(0)
+            };
+
+            // 2. 更新ボタン作成 (右寄せ)
+            _refreshTreeButton = new Button
+            {
+                Text = "↻", // リロード記号
+                Dock = DockStyle.Right,
+                Width = 30,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI Symbol", 12F, FontStyle.Bold) // 記号が綺麗に出るフォント
+            };
+            _refreshTreeButton.FlatAppearance.BorderSize = 0;
+            _refreshTreeButton.Click += (s, e) => FileTreeRefreshRequested?.Invoke(this, EventArgs.Empty); // イベント発火
+
+            // 3. タイトルラベル作成 (残りスペースを埋める)
+            _dirTitleLabel = new Label
+            {
+                Text = "📂 ノートディレクトリ",
+                Dock = DockStyle.Fill,
+                Font = new Font("Meiryo UI", 11F, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(5, 0, 0, 0)
+            };
+
+            // 4. パネルに配置 (Dock=Rightのボタンを先に追加するのがコツよ)
+            _dirHeaderPanel.Controls.Add(_refreshTreeButton);
+            _dirHeaderPanel.Controls.Add(_dirTitleLabel);
+
+            // 5. 左ペインに追加
+            this.leftSplitter.Panel2.Controls.Add(_dirHeaderPanel);
+            this.directoryTreeView = new TreeView { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None };
+            this.directoryTreeView.NodeMouseClick += DirectoryTreeView_NodeMouseClick;
+            this.leftSplitter.Panel2.Controls.Add(this.directoryTreeView);
+            this.directoryTreeView.BringToFront();
+
+            // --- Center Panel (Tab & Editor) ---
+            this.noteTabControl = new ClosableTabControl { Dock = DockStyle.Top, Height = 25, Padding = new Point(10, 3) };
+            this.innerSplitter.Panel1.Controls.Add(this.noteTabControl);
+            this.noteTabControl.Deselecting += NoteTabControl_Deselecting;
+            this.noteTabControl.SelectedIndexChanged += NoteTabControl_SelectedIndexChanged;
+            // NoteEditorPanelの生成
+            this.noteEditorPanel = new NoteEditorPanel { Dock = DockStyle.Fill, Padding = new Padding(0, 30, 0, 0) };
+            this.innerSplitter.Panel1.Controls.Add(this.noteEditorPanel);
+            this.noteEditorPanel.DocumentContentChanged += NoteEditorPanel_DocumentContentChanged; 
+            this.noteEditorPanel.ImagePasteRequested += (s, img) => ImagePasteRequested?.Invoke(this, img);
+            //this.noteEditorPanel.BringToFront(); // タブより手前に来ないように注意、順序はAdd順に依存するが念のため確認が必要
+
+            // --- Right Panel (Info) ---
+            //this.rightInfoPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.MistyRose, Padding = new Padding(10) };
+            //this.rightInfoPanel.Controls.Add(new Label { Text = "本日の予定", Dock = DockStyle.Top, Font = new Font("Meiryo UI", 12F, FontStyle.Bold), Height = 30 });
+            //this.innerSplitter.Panel2.Controls.Add(this.rightInfoPanel);
+            this.dashboardPanel = new DashboardPanel
+            {
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+
+            this.innerSplitter.Panel2.Controls.Add(this.dashboardPanel);
+            this.searchTextBox = new ToolStripTextBox();
+            this.searchTextBox.Alignment = ToolStripItemAlignment.Right;
+            this.searchTextBox.Size = new Size(200, 25);
+            this.searchTextBox.Text = "検索...";
+            this.searchTextBox.ForeColor = Color.Gray;
+
+            // Enterキーで検索
+            this.searchTextBox.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Enter && !string.IsNullOrWhiteSpace(this.searchTextBox.Text))
+                {
+                    GlobalSearchRequested?.Invoke(this, this.searchTextBox.Text);
+                    e.SuppressKeyPress = true;
+                }
+            };
+
+            // プレースホルダー処理
+            this.searchTextBox.Enter += (s, e) => { if (this.searchTextBox.Text == "検索...") { this.searchTextBox.Text = ""; this.searchTextBox.ForeColor = _searchBoxTextColor; } };
+            this.searchTextBox.Leave += (s, e) => { if (string.IsNullOrWhiteSpace(this.searchTextBox.Text)) { this.searchTextBox.Text = "検索..."; this.searchTextBox.ForeColor = Color.Gray; } };
+
+            // ★追加: ×ボタン
+            this.clearButton = new ToolStripButton("×");
+            clearButton.Alignment = ToolStripItemAlignment.Right;
+            clearButton.ToolTipText = "検索をクリアして閉じる";
+            clearButton.DisplayStyle = ToolStripItemDisplayStyle.Text; // 文字のみ表示
+            clearButton.Font = new Font("Segoe UI", 9F, FontStyle.Bold); // 太字で見やすく
+
+            // クリックイベント
+            clearButton.Click += (s, e) =>
+            {
+                SearchClearRequested?.Invoke(this, EventArgs.Empty);
+            };
+
+            // 順番が大事よ。「右寄せ」同士の場合、先に追加した方が「より右」に行くか「左」に来るかはライブラリ次第だけど、
+            // 通常は Right属性のアイテムは追加順に左へ並んでいくことが多いわ。
+            // [×] [検索ボックス] という並びにしたいなら、×を先に追加するか、順序を調整して。
+            // ここでは [検索ボックス] [×] の順に左から並ぶように、追加順序を意識するわ。
+
+            this.mainMenuStrip.Items.Add(clearButton); // 先に×を追加（一番右）
+            this.mainMenuStrip.Items.Add(this.searchTextBox); // 次に検索箱（その左）
+
+
+            this.statusStrip = new StatusStrip();
+            this.statusLabel = new ToolStripStatusLabel
+            {
+                Text = "Ready",
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            this.statusStrip.Items.Add(this.statusLabel);
+
+            // フォームに追加（Dock=Bottomなので、他のコントロールより先に追加してもいいけど、
+            // WinFormsのDock順序は「後から追加したものが内側」になるから、
+            // 最下部に張り付けたいなら、他のDock=Fillなコントロールより「前」に追加しないと隠れる可能性があるわ。
+            // でも一番安全なのは、Controls.Add の順番を最後にすることね。）
+
+            this.Controls.Add(this.statusStrip);
+            // ※もしステータスバーが埋もれて見えない場合は、
+            //this.Controls.SetChildIndex(this.statusStrip, 0); //などを試して最前面に持ってくること。
+            // --- イベント購読 ---
+            // ダッシュボードのリンククリックを中継
+            this.dashboardPanel.LinkClicked += (s, path) => DashboardLinkClicked?.Invoke(this, path);
+            this.FormClosing += Form1_FormClosing;
+            
+        }*/
     }
 }
