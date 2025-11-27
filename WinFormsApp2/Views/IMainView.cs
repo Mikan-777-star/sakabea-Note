@@ -96,6 +96,20 @@ namespace WinFormsApp2.Views
         event EventHandler FileTreeRefreshRequested;
 
         void RestartConsole(string newPath);
+
+        // イベント追加
+        event EventHandler ExportHtmlRequested;
+        event EventHandler ExportPdfRequested;
+
+        // パスを聞くメソッド (フィルター指定可能に拡張、または別メソッド作成)
+        // 今回は既存の AskUserForSavePath を拡張するか、新しいのを作るか。
+        // 拡張性を考えて新しいのを作りましょう。
+        string? AskUserForExportPath(string defaultName, string filter);
+
+        // PDF保存命令 (Presenter -> View -> Panel)
+        Task ExportPdfToPath(string path);
+        public void AddPluginMenu(string path, string text, EventHandler action);
+
     }
 
     // ツリー表示用の軽量なデータモデル（ViewModel的なもの）

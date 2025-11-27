@@ -1,9 +1,11 @@
 ﻿
 using System.ComponentModel;
 using System.IO;
+using System.Text;
 using System.Threading;
 using WinFormsApp2.Services;
 using WinFormsApp2.Views;
+using WinFormApp2.PluginBase;
 
 namespace WinFormsApp2.Presenters
 {
@@ -18,6 +20,8 @@ namespace WinFormsApp2.Presenters
         private bool _isSearchMode = false;
         private readonly SearchReportService _searchReportService;
         private  ThemeService _themeService;
+        private MarkdownConverter _markdownConverter;
+        private PluginManager _pluginManager;
         public MainPresenter(IMainView view, FileManager fileManager, BackupManager backupManager)
         {
             _view = view;
@@ -26,6 +30,9 @@ namespace WinFormsApp2.Presenters
             _settingsService = new SettingsService();
             _searchReportService = new SearchReportService();
             _themeService = new ThemeService();
+            _markdownConverter = new MarkdownConverter();
+            var bridge = new PluginBridge(_view);
+            _pluginManager = new PluginManager(bridge);
             // Viewのイベントを購読（紐づけ）
             _view.LoadRequested += OnViewLoad;
             _view.FileSelected += OnFileSelected;
@@ -42,6 +49,8 @@ namespace WinFormsApp2.Presenters
             _view.ImagePasteRequested += OnImagePasteRequested;
             _view.ChangeFolderRequested += OnChangeFolderRequested;
             _view.FileTreeRefreshRequested += OnFileTreeRefreshRequested;
+            _view.ExportHtmlRequested += OnExportHtmlRequested;
+            _view.ExportPdfRequested += OnExportPdfRequested;
 
             _backupTimer = new System.Threading.Timer(OnBackupTick, null, 60000, 60000);
         }
@@ -72,6 +81,7 @@ namespace WinFormsApp2.Presenters
             CheckForBackups();
             _view.SetResourceBasePath(_fileManager.CurrentDirectory);
             _view.StartConsole(settings.LastWorkspacePath);
+            _pluginManager.LoadPlugins();
         }
 
         private void OnFileSelected(object? sender, string filePath)
@@ -822,6 +832,66 @@ namespace WinFormsApp2.Presenters
 
             // 完了感を出すためにステータスバー更新
             _view.SetStatusMessage("ファイルツリーを更新しました。");
+        }
+
+        private void OnExportHtmlRequested(object? sender, EventArgs e)
+        {
+            var doc = _view.GetActiveDocument();
+            if (doc == null) return;
+
+            // デフォルトファイル名 (hoge.md -> hoge.html)
+            string defaultName = Path.GetFileNameWithoutExtension(doc.IsUntitled ? "Untitled" : doc.FilePath) + ".html";
+
+            string? path = _view.AskUserForExportPath(defaultName, "HTML File (*.html)|*.html");
+            if (string.IsNullOrEmpty(path)) return;
+
+            try
+            {
+                // エディタの内容を取得
+                string mdContent = _view.GetCurrentEditorContent();
+
+                // HTML生成 (現在のテーマ設定を反映)
+                string html = _markdownConverter.ToExportHtml(mdContent, _themeService.IsDarkMode);
+
+                // 保存 (FileManagerを使ってもいいし、直接でもいい)
+                File.WriteAllText(path, html, Encoding.UTF8);
+
+                _view.SetStatusMessage($"HTMLをエクスポートしました: {path}");
+            }
+            catch (Exception ex)
+            {
+                _view.ShowError($"エクスポートエラー: {ex.Message}");
+            }
+        }
+
+        private async void OnExportPdfRequested(object? sender, EventArgs e)
+        {
+            // PDFは「今プレビューされているもの」を印刷するから、
+            // 一旦ドキュメントの整合性などは気にせず、WebView2の状態を信じるわ。
+
+            // ファイル名決定
+            var doc = _view.GetActiveDocument();
+            string baseName = doc != null
+                ? Path.GetFileNameWithoutExtension(doc.IsUntitled ? "Untitled" : doc.FilePath)
+                : "Export";
+            string defaultName = baseName + ".pdf";
+
+            string? path = _view.AskUserForExportPath(defaultName, "PDF File (*.pdf)|*.pdf");
+            if (string.IsNullOrEmpty(path)) return;
+
+            try
+            {
+                _view.SetStatusMessage("PDF生成中...");
+
+                // View (Panel) に依頼
+                await _view.ExportPdfToPath(path);
+
+                _view.SetStatusMessage($"PDFをエクスポートしました: {path}");
+            }
+            catch (Exception ex)
+            {
+                _view.ShowError($"PDF生成エラー: {ex.Message}");
+            }
         }
     }
 }

@@ -13,7 +13,7 @@ namespace WinFormsApp2.NoteApp.UI
 
         // EnumWindows関連
         public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-        
+
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
@@ -87,5 +87,26 @@ namespace WinFormsApp2.NoteApp.UI
 
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr SendMessage(IntPtr hWnd, int wMsg, IntPtr wParam, IntPtr lParam);
+
+        public const int WM_SETREDRAW = 0x000B;
+
+        [DllImport("user32.dll")]
+        public static extern int SetScrollPos(IntPtr hWnd, int nBar, int nPos, bool bRedraw);
+
+        [DllImport("user32.dll")]
+        public static extern int GetScrollPos(IntPtr hWnd, int nBar);
+
+        // public static extern IntPtr SendMessage(IntPtr hWnd, int wMsg, IntPtr wParam, IntPtr lParam);
+
+        public const int SB_THUMBPOSITION = 4;
+        public const int SB_VERT = 1;
+        public const int WM_VSCROLL = 0x0115;
+
+        [DllImport("user32.dll")]
+        public static extern int GetScrollRange(IntPtr hWnd, int nBar,out int lpMinPos, out int lpMaxPos);
+        public const int EM_GETFIRSTVISIBLELINE = 0x00CE;
     }
 }

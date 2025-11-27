@@ -31,4 +31,8 @@
     <PackageReference Include="System.Management" Version="10.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\WinFormApp2.PluginBase\WinFormApp2.PluginBase.csproj" />
+  </ItemGroup>
+
 </Project>

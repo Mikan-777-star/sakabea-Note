@@ -103,6 +103,9 @@ namespace WinFormsApp2
 
         public event EventHandler FileTreeRefreshRequested;
 
+        public event EventHandler ExportHtmlRequested;
+        public event EventHandler ExportPdfRequested;
+
         private Panel _dirHeaderPanel = null!;
         private Label _dirTitleLabel = null!;
         private Button _refreshTreeButton = null!;
@@ -449,6 +452,17 @@ namespace WinFormsApp2
             openFolderItem.ShortcutKeys = Keys.Control | Keys.Shift | Keys.O;
             openFolderItem.Click += OpenWorkspaceFolder;
             fileMenu.DropDownItems.Add(openFolderItem); // ファイルメニューに追加
+
+            var exportMenu = new ToolStripMenuItem("エクスポート(&E)");
+            var htmlItem = new ToolStripMenuItem("HTMLとして保存...");
+            var pdfItem = new ToolStripMenuItem("PDFとして保存...");
+
+            htmlItem.Click += (s, e) => ExportHtmlRequested?.Invoke(this, EventArgs.Empty);
+            pdfItem.Click += (s, e) => ExportPdfRequested?.Invoke(this, EventArgs.Empty);
+
+            exportMenu.DropDownItems.Add(htmlItem);
+            exportMenu.DropDownItems.Add(pdfItem);
+            fileMenu.DropDownItems.Add(exportMenu); // ファイルメニューの中に入れる
 
             fileMenu.DropDownItems.Add(new ToolStripSeparator());
             var exitItem = new ToolStripMenuItem("終了(&X)");
@@ -808,7 +822,7 @@ namespace WinFormsApp2
             //ダッシュボードパネル色変更
             dashboardPanel.BackColor = theme.BackColor;
             dashboardPanel.ForeColor = theme.ForeColor;
-            dashboardPanel.SetTheme(theme.WebColor);
+            dashboardPanel.SetTheme(theme.WebColor, theme.IsDarkMode);
             dashboardPanel.isDarkMode = theme.IsDarkMode;
 
             // 7. ラベル類
@@ -851,6 +865,15 @@ namespace WinFormsApp2
             _refreshTreeButton.ForeColor = theme.IsDarkMode ? theme.AccentColor : Color.DimGray;
             _refreshTreeButton.FlatAppearance.MouseOverBackColor = theme.IsDarkMode ? Color.FromArgb(60, 60, 60) : Color.White;
             _refreshTreeButton.FlatAppearance.MouseDownBackColor = theme.IsDarkMode ? Color.FromArgb(40, 40, 40) : Color.LightGray;
+
+            // コンソールへの適用
+            noteEditorPanel.ApplyThemeToConsole(theme.IsDarkMode);
+
+            // ★追加: エディタのハイライト再適用
+            noteEditorPanel.ForceHighlight(theme.IsDarkMode);
+
+            noteEditorPanel.ApplyThemeToPreview(theme.IsDarkMode);
+
         }
         public void InsertTextAtCursor(string text)
         {
@@ -909,6 +932,38 @@ namespace WinFormsApp2
         public void RestartConsole(string newPath)
         {
             noteEditorPanel.ConsolePanel.RestartTerminal(newPath);
+        }
+
+        public string? AskUserForExportPath(string defaultName, string filter)
+        {
+            using (var sfd = new SaveFileDialog())
+            {
+                sfd.FileName = defaultName;
+                sfd.Filter = filter;
+                if (sfd.ShowDialog() == DialogResult.OK) return sfd.FileName;
+            }
+            return null;
+        }
+
+        public async Task ExportPdfToPath(string path)
+        {
+            await noteEditorPanel.SaveAsPdfAsync(path);
+        }
+
+        // Form1.cs
+        public void AddPluginMenu(string path, string text, EventHandler action)
+        {
+            // 簡易実装: "プラグイン" メニューを作ってそこに入れる
+            var pluginMenu = mainMenuStrip.Items["PluginMenu"] as ToolStripMenuItem;
+            if (pluginMenu == null)
+            {
+                pluginMenu = new ToolStripMenuItem("プラグイン(&P)") { Name = "PluginMenu" };
+                mainMenuStrip.Items.Add(pluginMenu);
+            }
+
+            var item = new ToolStripMenuItem(text);
+            item.Click += action;
+            pluginMenu.DropDownItems.Add(item);
         }
     }
 }

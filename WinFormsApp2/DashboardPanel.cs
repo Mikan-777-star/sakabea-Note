@@ -1,10 +1,12 @@
-﻿using System;
-using System.Drawing;
-using System.IO;
-using System.Threading.Tasks;
-using System.Windows.Forms;
+﻿using Markdig;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
+using System;
+using System.Drawing;
+using System.IO;
+using System.Text.Json;
+using System.Threading.Tasks;
+using System.Windows.Forms;
 using WinFormsApp2.Services;
 
 namespace WinFormsApp2.NoteApp.UI
@@ -67,9 +69,24 @@ namespace WinFormsApp2.NoteApp.UI
 
                 if (_webView.CoreWebView2 != null)
                 {
-                    _webView.CoreWebView2.Settings.IsScriptEnabled = false;
+                    var settings = _webView.CoreWebView2.Settings;
+                    //_webView.CoreWebView2.Settings.IsScriptEnabled = false;
                     //
                     //
+                    // 2. ブラウザ標準のショートカットキーを無効化
+                    // (Ctrl+P, Ctrl+F, F5, F12 などが効かなくなる)
+                    settings.AreBrowserAcceleratorKeysEnabled = false;
+
+                    // 3. 右クリックメニューを無効化
+                    // (「検証」とか「印刷」とか出させない)
+                    settings.AreDefaultContextMenusEnabled = false;
+
+                    // 4. Ctrl+ホイールでのズームを無効化
+                    // (勝手に拡大縮小されるのを防ぐ)
+                    settings.IsZoomControlEnabled = false;
+
+                    // 5. ステータスバー（リンクにマウスを乗せた時の左下の表示）を無効化
+                    settings.IsStatusBarEnabled = false;
                     _webView.CoreWebView2.AddWebResourceRequestedFilter(
                         $"{VIRTUAL_HOST_URL}*",
                         CoreWebView2WebResourceContext.All
@@ -93,10 +110,13 @@ namespace WinFormsApp2.NoteApp.UI
             }
         }
 
-        public async void SetTheme(CoreWebView2PreferredColorScheme color)
+        public async void SetTheme(CoreWebView2PreferredColorScheme color,bool isDark)
         {
             await _webViewInitializedTcs.Task;
             _webView.CoreWebView2.Profile.PreferredColorScheme = color;
+                // JS関数を呼ぶだけ。HTMLのリロードは発生しない！
+             await _webView.CoreWebView2.ExecuteScriptAsync($"window.setTheme({isDark.ToString().ToLower()});");
+        
         }
         private void CoreWebView2_WebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
         {
@@ -146,7 +166,10 @@ namespace WinFormsApp2.NoteApp.UI
         /// <summary>
         /// 外部からコンテンツを更新するためのメソッド
         /// </summary>
-        public async void UpdateDashboard(string title, string markdownContent)
+        /// 
+        private string _lastRenderedText = string.Empty;
+        bool needsFullReload = true;
+        public async void UpdateDashboard(string title, string markdown)
         {
             _titleLabel.Text = title;
 
@@ -154,19 +177,44 @@ namespace WinFormsApp2.NoteApp.UI
             bool isReady = await _webViewInitializedTcs.Task;
             if (!isReady || _webView.CoreWebView2 == null) return;
 
-            // コンテンツが空の場合は案内を表示
-            if (string.IsNullOrWhiteSpace(markdownContent))
+            // 2. ★重要: テキストが変わってないなら何もしない（無駄な処理をカット）
+            if (markdown == _lastRenderedText) return;
+            _lastRenderedText = markdown;
+
+            // 3. 状況に応じて更新方法を変える
+
+            // テーマ適用直後などでURLが "about:blank" の場合、または初回はフルロードが必要
+            string currentSource = _webView.Source.ToString();
+            bool isDark = _webView.BackColor.R < 128; // 簡易判定
+            if (needsFullReload)
             {
-                string emptyHtml = "<html><body style='font-family: Meiryo UI; color: #888;'>No content for this day.</body></html>";
-                _webView.CoreWebView2.NavigateToString(emptyHtml);
+                // A. フルロード (NavigateToString)
+                // 現在のテーマ状態を取得する必要があるわね。
+                // 簡易的に背景色で判定するか、外部から IsDarkMode を渡す設計にするか。
+                // ここでは「とりあえず更新」するわ。
+               
+                string html = _markdownConverter.ToHtml(markdown, VIRTUAL_HOST_URL, isDark);
+                _webView.CoreWebView2.NavigateToString(html);
+                needsFullReload = false;
             }
             else
             {
-                // MarkdownをHTMLに変換して表示
-                string html = _markdownConverter.ToHtml(markdownContent, VIRTUAL_HOST_URL, isDarkMode);
-                _webView.CoreWebView2.NavigateToString(html);
+                // B. スマート更新 (JavaScript Injection)
+                // ボディの中身だけ変換
+
+                // ★超重要: C#の文字列をJSに渡すときは、必ずJSONエスケープすること！
+                // これをしないと、本文に " とか改行が入った瞬間にJSエラーで死ぬわ。
+                string htmlBody = _markdownConverter.ToHtml(markdown, VIRTUAL_HOST_URL, isDark, false);
+
+
+                string safeJson = JsonSerializer.Serialize(htmlBody);
+
+                // 定義しておいた window.updateContent 関数を呼ぶ
+                // ExecuteScriptAsync は非同期でJSを実行するわ
+                await _webView.CoreWebView2.ExecuteScriptAsync($"window.updateContent({safeJson});");
             }
         }
+        
         private void WebView_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
         {
             // "app://open/" で始まるリンクなら、アプリ側で処理してブラウザ遷移を止める

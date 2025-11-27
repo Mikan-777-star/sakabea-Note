@@ -1,22 +1,55 @@
 ﻿using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
-
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading; // Timerのために必須
 using System.Threading.Tasks; // Taskのために必須
 using System.Windows.Forms;
+using WinFormsApp2.NoteApp.UI.WinFormsApp2.NoteApp.UI;
 using WinFormsApp2.Services;
 
 namespace WinFormsApp2.NoteApp.UI
 {
+
+    namespace WinFormsApp2.NoteApp.UI
+    {
+        // 標準のRichTextBoxを継承して、IMEの状態を知れるようにする
+        public class ExRichTextBox : RichTextBox
+        {
+            // IMEが作成中（変換中）かどうか
+            public bool IsImeComposing { get; private set; } = false;
+
+            private const int WM_IME_STARTCOMPOSITION = 0x010D;
+            private const int WM_IME_ENDCOMPOSITION = 0x010E;
+            private const int WM_IME_COMPOSITION = 0x010F;
+
+            protected override void WndProc(ref Message m)
+            {
+                
+                switch (m.Msg)
+                {
+                    case WM_IME_STARTCOMPOSITION:
+                        IsImeComposing = true;
+                        break;
+
+                    case WM_IME_ENDCOMPOSITION:
+                        IsImeComposing = false;
+                        break;
+                }
+
+                base.WndProc(ref m);
+            }
+        }
+    }
     public class NoteEditorPanel : UserControl
     {
         public SplitContainer SplitterContainer { get; private set; } = null!;
 
         public SplitContainer downContainer { get; private set; } = null!;
-        public RichTextBox EditorTextBox { get; private set; } = null!;
+        public ExRichTextBox EditorTextBox { get; private set; } = null!;
         public WebView2 PreviewWebView2 { get; private set; } = null!;
 
         public EmbeddedTerminalPanel ConsolePanel { get; private set; } = null!; // 型変更
@@ -41,12 +74,15 @@ namespace WinFormsApp2.NoteApp.UI
         private Button _btnPrev = null!;
         private Button _btnClose = null!;
         private Label _lblStatus = null!;
-
         public event EventHandler? DocumentContentChanged;
         public string BasePath { get; set; } = Directory.GetCurrentDirectory();
         public bool isDarkMode { get; set; } = false;
 
+        public bool EnableHighlighting { get; set; } = true;
+        private string _lastRenderedText = string.Empty;
 
+        private System.Windows.Forms.Timer _scrollWatcher = null!;
+        private int _lastScrollPos = -1;
         public NoteEditorPanel()
         {
             _markdownConverter = new MarkdownConverter();
@@ -317,7 +353,22 @@ namespace WinFormsApp2.NoteApp.UI
                 // 設定（JavaScript無効化など）
                 if (PreviewWebView2.CoreWebView2 != null)
                 {
-                    PreviewWebView2.CoreWebView2.Settings.IsScriptEnabled = false;
+                    var settings = PreviewWebView2.CoreWebView2.Settings;
+                    // 2. ブラウザ標準のショートカットキーを無効化
+                    // (Ctrl+P, Ctrl+F, F5, F12 などが効かなくなる)
+                    settings.AreBrowserAcceleratorKeysEnabled = false;
+
+                    // 3. 右クリックメニューを無効化
+                    // (「検証」とか「印刷」とか出させない)
+                    settings.AreDefaultContextMenusEnabled = false;
+
+                    // 4. Ctrl+ホイールでのズームを無効化
+                    // (勝手に拡大縮小されるのを防ぐ)
+                    settings.IsZoomControlEnabled = false;
+
+                    // 5. ステータスバー（リンクにマウスを乗せた時の左下の表示）を無効化
+                    settings.IsStatusBarEnabled = false;
+                    //PreviewWebView2.CoreWebView2.Settings.IsScriptEnabled = false;
                     // PreviewWebView2.CoreWebView2.Profile.PreferredColorScheme = CoreWebView2PreferredColorScheme.Light;
                     // ★ セキュリティの壁を越える魔法の1行
                     // "https://app.assets/" へのアクセスを、カレントディレクトリへのアクセスに変換する
@@ -373,13 +424,14 @@ namespace WinFormsApp2.NoteApp.UI
                     if (ext == ".jpg" || ext == ".jpeg") mimeType = "image/jpeg";
                     if (ext == ".gif") mimeType = "image/gif";
                     if (ext == ".svg") mimeType = "image/svg+xml";
-
+                    string headers = $"Content-Type: {mimeType}\nCache-Control: public, max-age=31536000";
                     // 200 OK を返す
                     e.Response = PreviewWebView2.CoreWebView2.Environment.CreateWebResourceResponse(
                         stream,
                         200,
                         "OK",
-                        $"Content-Type: {mimeType}"
+                        $"Content-Type: {mimeType}\r\n" + 
+                        headers
                     );
                 }
                 catch
@@ -447,26 +499,71 @@ namespace WinFormsApp2.NoteApp.UI
             this.Invoke((Action)(async () =>
             {
                 await UpdatePreviewAsync(EditorTextBox.Text);
+                if (EditorTextBox.IsImeComposing)
+                {
+                    // まだ変換中だから塗らない。
+                    // ただし、変換確定後に塗られないと困るから、タイマーを少し延長して再予約する。
+                    _debounceTimer.Change(500, System.Threading.Timeout.Infinite);
+                    return;
+                }
+                bool isDark = EditorTextBox.BackColor.R < 128;
+                ApplySyntaxHighlighting(isDark);
             }));
         }
 
         /// <summary>
         /// 非同期でプレビューを更新する
         /// </summary>
+        /// 
+
+        bool needsFullReload = true;
         private async Task UpdatePreviewAsync(string markdown)
         {
-            // ★ ここが時限爆弾の解除処理よ
-            // 初期化が終わっていなければ、ここで終わるまで非同期に待機する。
-            // UIをフリーズさせずに待てるのが await の力よ。
+            // 1. 初期化チェック
             bool isReady = await _webViewInitializedTcs.Task;
+            if (!isReady || PreviewWebView2.CoreWebView2 == null) return;
 
-            if (!isReady || PreviewWebView2.CoreWebView2 == null)
+            // 2. ★重要: テキストが変わってないなら何もしない（無駄な処理をカット）
+            if (markdown == _lastRenderedText) return;
+            _lastRenderedText = markdown;
+
+            // 3. 状況に応じて更新方法を変える
+
+            bool isDark = EditorTextBox.BackColor.R < 128; // 簡易判定
+            if (needsFullReload)
             {
-                return; // 初期化失敗、またはコントロールがない
+                // A. フルロード (NavigateToString)
+                // 現在のテーマ状態を取得する必要があるわね。
+                // 簡易的に背景色で判定するか、外部から IsDarkMode を渡す設計にするか。
+                // ここでは「とりあえず更新」するわ。
+                string html = _markdownConverter.ToHtml(markdown, VIRTUAL_HOST_URL, isDark);
+                PreviewWebView2.CoreWebView2.NavigateToString(html);
+                needsFullReload = false; // 次回からはスマート更新に切り替え
             }
+            else
+            {
+                // B. スマート更新 (JavaScript Injection)
+                // ボディの中身だけ変換
+                string htmlBody = _markdownConverter.ToHtml(markdown, VIRTUAL_HOST_URL, isDark , false);
 
-            string htmlContent = _markdownConverter.ToHtml(markdown,VIRTUAL_HOST_URL, isDarkMode);
-            PreviewWebView2.CoreWebView2.NavigateToString(htmlContent);
+                // ★超重要: C#の文字列をJSに渡すときは、必ずJSONエスケープすること！
+                // これをしないと、本文に " とか改行が入った瞬間にJSエラーで死ぬわ。
+                string safeJson = JsonSerializer.Serialize(htmlBody);
+
+                // 定義しておいた window.updateContent 関数を呼ぶ
+                // ExecuteScriptAsync は非同期でJSを実行するわ
+                await PreviewWebView2.CoreWebView2.ExecuteScriptAsync($"window.updateContent({safeJson});");
+            }
+        }
+
+        // ...
+
+        // 強制リフレッシュ用（テーマ切り替え時などに呼ぶ）
+        public void ForceRefreshPreview()
+        {
+            _lastRenderedText = ""; // 強制的に更新させるためにリセット
+                                    // Debounceタイマーを即時発火させるか、直接呼ぶ
+            OnDebounceTimerTick(null);
         }
 
         public void DisplayDocument(MarkdownDocument doc)
@@ -505,7 +602,7 @@ namespace WinFormsApp2.NoteApp.UI
             };
             this.downContainer.Panel1.Controls.Add(this.SplitterContainer);
 
-            this.EditorTextBox = new RichTextBox
+            this.EditorTextBox = new ExRichTextBox
             {
                 Dock = DockStyle.Fill,
                 Multiline = true,
@@ -534,6 +631,11 @@ namespace WinFormsApp2.NoteApp.UI
             this.downContainer.Panel2.Controls.Add(this.ConsolePanel);
             // タイマーのインスタンス化（最初は停止状態）
             _debounceTimer = new System.Threading.Timer(OnDebounceTimerTick, null, Timeout.Infinite, Timeout.Infinite);
+
+            _scrollWatcher = new System.Windows.Forms.Timer();
+            _scrollWatcher.Interval = 50;
+            _scrollWatcher.Tick += ScrollWatcher_Tick;
+            _scrollWatcher.Start(); // 常に回しておく
         }
 
         // --- ドラッグ＆ドロップの実装 ---
@@ -614,6 +716,8 @@ namespace WinFormsApp2.NoteApp.UI
             if (disposing)
             {
                 // タイマーを確実に破棄する。これを忘れるとメモリリークの原因になるわ。
+                _scrollWatcher?.Stop();
+                _scrollWatcher?.Dispose();
                 _debounceTimer?.Dispose();
             }
             base.Dispose(disposing);
@@ -739,11 +843,10 @@ namespace WinFormsApp2.NoteApp.UI
         public void InsertText(string text)
         {
             // カーソル位置に挿入
-            int start = EditorTextBox.SelectionStart;
-            EditorTextBox.Text = EditorTextBox.Text.Insert(start, text);
+            EditorTextBox.SelectedText = text;
 
-            // カーソルを挿入した文字の後ろに進める
-            EditorTextBox.SelectionStart = start + text.Length;
+            // カーソル位置は自動的に進むから、手動設定は不要な場合が多いけど、
+            // 念のためフォーカスとスクロールだけケアしておくわ。
             EditorTextBox.ScrollToCaret();
             EditorTextBox.Focus();
         }
@@ -756,11 +859,164 @@ namespace WinFormsApp2.NoteApp.UI
         {
             ConsolePanel.ApplyTheme(isDark);
         }
-
+        public async void ApplyThemeToPreview(bool isDark)
+        {
+            if (PreviewWebView2.CoreWebView2 != null)
+            {
+                // JS関数を呼ぶだけ。HTMLのリロードは発生しない！
+                await PreviewWebView2.CoreWebView2.ExecuteScriptAsync($"window.setTheme({isDark.ToString().ToLower()});");
+            }
+        }
         public void StartConsole(string? path = null)
         {
 
             this.ConsolePanel.StartTerminal(path);
+        }
+
+        private void BeginUpdate()
+        {
+            NativeMethods.SendMessage(EditorTextBox.Handle, NativeMethods.WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        private void EndUpdate()
+        {
+            NativeMethods.SendMessage(EditorTextBox.Handle, NativeMethods.WM_SETREDRAW, new IntPtr(1), IntPtr.Zero);
+            EditorTextBox.Invalidate(); // 強制再描画
+        }
+
+        // ★追加: シンタックスハイライトの実行
+        // 引数 isDarkMode は ThemeService から渡してもらうか、パネルで保持するか。
+        // ここでは引数で受け取る設計にするわ。
+        private void ApplySyntaxHighlighting(bool isDarkMode)
+        {
+            if (!EnableHighlighting || string.IsNullOrEmpty(EditorTextBox.Text)) return;
+
+            // 1. カーソル位置とスクロール位置の保存（これをしないと勝手にスクロールしちゃう）
+            int originalIndex = EditorTextBox.SelectionStart;
+            int originalLength = EditorTextBox.SelectionLength;
+            int scrollPos = NativeMethods.GetScrollPos(EditorTextBox.Handle, NativeMethods.SB_VERT);
+            // ★重要: 描画停止！
+            BeginUpdate();
+
+            try
+            {
+                string text = EditorTextBox.Text;
+
+                // 2. 色の定義 (ThemeServiceと合わせると良い)
+                Color defaultColor = isDarkMode ? Color.FromArgb(220, 220, 220) : Color.Black;
+                Color headerColor = isDarkMode ? Color.FromArgb(86, 156, 214) : Color.Blue;      // 青
+                Color boldColor = isDarkMode ? Color.FromArgb(206, 145, 120) : Color.DarkRed;    // 赤茶
+                Color quoteColor = isDarkMode ? Color.FromArgb(106, 153, 85) : Color.Green;      // 緑
+                Color codeColor = isDarkMode ? Color.FromArgb(220, 220, 170) : Color.Purple;     // 紫
+                Color linkColor = isDarkMode ? Color.FromArgb(78, 201, 176) : Color.DarkCyan;    // 水色
+
+                // 3. 全体を一旦リセット (デフォルト色に戻す)
+                EditorTextBox.SelectAll();
+                EditorTextBox.SelectionColor = defaultColor;
+                // 太字などのスタイルもリセットしたい場合はここでFontも戻すけど、今回は色だけ。
+
+                // 4. 正規表現で塗っていく
+                // ※順番重要: 範囲が大きいものや、競合しそうなものをどう扱うか。
+                // 今回はシンプルに上書きしていくわ。
+
+                // 見出し (# Header)
+                HighlightRegex(@"^#{1,6}\s.*$", headerColor, text);
+
+                // 太字 (**Bold**)
+                HighlightRegex(@"\*\*.*?\*\*", boldColor, text);
+
+                // 引用 (> Quote)
+                HighlightRegex(@"^>.*$", quoteColor, text);
+
+                // コードブロック (``` ... ```) 
+                // SingleLineモードにしないと複数行マッチしないので注意
+                HighlightRegex(@"```[\s\S]*?```", codeColor, text);
+
+                // インラインコード (`code`)
+                HighlightRegex(@"`.*?`", codeColor, text);
+
+                // リンク ([Title](Url))
+                HighlightRegex(@"\[.*?\]\(.*?\)", linkColor, text);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Highlight Error: {ex.Message}");
+            }
+            finally
+            {
+                // 5. カーソル位置を復元
+                EditorTextBox.Select(originalIndex, originalLength);
+                EditorTextBox.SelectionColor = isDarkMode ? Color.FromArgb(220, 220, 220) : Color.Black; // 入力色を戻す
+                NativeMethods.SetScrollPos(EditorTextBox.Handle, NativeMethods.SB_VERT, scrollPos, true);
+                IntPtr wParam = (IntPtr)((scrollPos << 16) | NativeMethods.SB_THUMBPOSITION);
+                NativeMethods.SendMessage(EditorTextBox.Handle, NativeMethods.WM_VSCROLL, wParam, IntPtr.Zero);
+                // ★描画再開！
+                EndUpdate();
+            }
+        }
+
+        // 正規表現ヘルパー
+        private void HighlightRegex(string pattern, Color color, string text)
+        {
+            // Multiline: ^と$を行頭・行末にマッチさせる
+            Regex regex = new Regex(pattern, RegexOptions.Multiline);
+            MatchCollection matches = regex.Matches(text);
+
+            foreach (Match m in matches)
+            {
+                EditorTextBox.Select(m.Index, m.Length);
+                EditorTextBox.SelectionColor = color;
+            }
+        }
+        public void ForceHighlight(bool isDark)
+        {
+            ApplySyntaxHighlighting(isDark);
+        }
+
+        private async void ScrollWatcher_Tick(object? sender, EventArgs e)
+        {
+            if (PreviewWebView2.CoreWebView2 == null) return;
+
+            // 1. 現在の「見た目上の」一番上の行インデックスを取得
+            int firstVisibleVisualLine = (int)NativeMethods.SendMessage(EditorTextBox.Handle, NativeMethods.EM_GETFIRSTVISIBLELINE, IntPtr.Zero, IntPtr.Zero);
+
+            // 2. その行の先頭文字が、テキスト全体の何文字目かを取得
+            int charIndex = EditorTextBox.GetFirstCharIndexFromLine(firstVisibleVisualLine);
+
+            // 3. その文字が「論理的に（Markdown的に）」何行目かを取得 (0始まり)
+            int logicalLineIndex = EditorTextBox.GetLineFromCharIndex(charIndex);
+
+            // 前回と同じ行なら何もしない
+            if (logicalLineIndex == _lastScrollPos) return;
+            _lastScrollPos = logicalLineIndex;
+
+            // 4. WebView2に「この行を表示しろ」と命令 (JS側は属性値に合わせて調整、通常は0始まりか1始まりか確認)
+            // Markdigのline属性は通常 0始まり よ。
+            try
+            {
+                await PreviewWebView2.CoreWebView2.ExecuteScriptAsync($"window.syncToLine({logicalLineIndex});");
+            }
+            catch { }
+        }
+        // ★追加: 現在のプレビューをPDFとして保存
+        public async Task SaveAsPdfAsync(string filePath)
+        {
+            if (PreviewWebView2.CoreWebView2 == null) return;
+
+            try
+            {
+                // 印刷設定 (A4, 縦向きなど)
+                var printSettings = PreviewWebView2.CoreWebView2.Environment.CreatePrintSettings();
+                printSettings.Orientation = CoreWebView2PrintOrientation.Portrait;
+                // printSettings.ShouldPrintBackgrounds = true; // 背景色を印刷するかどうか（デフォルトfalseの場合が多いのでtrue推奨）
+
+                // PDF生成実行
+                await PreviewWebView2.CoreWebView2.PrintToPdfAsync(filePath, printSettings);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"PDF生成失敗: {ex.Message}");
+            }
         }
     }
 }
