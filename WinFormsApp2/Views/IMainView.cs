@@ -108,7 +108,7 @@ namespace WinFormsApp2.Views
 
         // PDF保存命令 (Presenter -> View -> Panel)
         Task ExportPdfToPath(string path);
-        public void AddPluginMenu(string path, string text, EventHandler action);
+        public void AddPluginMenu(string path, string text, EventHandler action, string shortcut = "");
 
         public string GetSelectedEditorText();
 

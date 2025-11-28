@@ -10,7 +10,7 @@ using WinFormsApp2.Services; // MarkdownDocumentなどがここならusingが必
 using WinFormsApp2.Views;
 namespace WinFormsApp2
 {
-    public partial class Form1 : Form, IMainView
+    public partial class Form1 : ModernForm, IMainView
     {
         // 必要なフィールド
         private NoteEditorPanel noteEditorPanel = null!;
@@ -450,6 +450,8 @@ namespace WinFormsApp2
         public void ApplyTheme(ThemeService theme)
         {
 
+            base.SetTheme(theme.IsDarkMode);
+
             // 1. フォーム全体
             this.BackColor = theme.BackColor;
             this.ForeColor = theme.ForeColor;
@@ -622,13 +624,17 @@ namespace WinFormsApp2
         }
 
         // Form1.cs
-        public void AddPluginMenu(string path, string text, EventHandler action)
+        public void AddPluginMenu(string path, string text, EventHandler action, string shortcut = "")
         {
             // 簡易実装: "プラグイン" メニューを作ってそこに入れる
             var pluginMenu = mainMenuStrip.Items["PluginMenu"] as ToolStripMenuItem;
             if (pluginMenu == null)
             {
                 pluginMenu = new ToolStripMenuItem("プラグイン(&P)") { Name = "PluginMenu" };
+                if(shortcut != "")
+                {
+                    ApplyShortcut(pluginMenu, shortcut);
+                }
                 mainMenuStrip.Items.Add(pluginMenu);
             }
 

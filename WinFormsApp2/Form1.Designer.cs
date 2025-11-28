@@ -2,7 +2,7 @@
 using Microsoft.Web.WebView2.Core;
 namespace WinFormsApp2
 {
-    partial class Form1: Form
+    partial class Form1: ModernForm
     {
         /// <summary>
         ///  Required designer variable.

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -7,7 +8,7 @@ using WinFormsApp2.Views;
 
 namespace WinFormsApp2
 {
-    partial class Form1 : Form
+    partial class Form1 : ModernForm
     {
         private TreeNode CreateTreeNode(FileNodeModel model)
         {
@@ -83,6 +84,42 @@ namespace WinFormsApp2
         {
             // MessageBox... は削除して、イベント発火！
             ChangeFolderRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// 文字列からショートカットキーを生成してメニューアイテムに適用する
+        /// </summary>
+        /// <param name="menuItem">対象のメニューアイテム</param>
+        /// <param name="shortcutString">"Ctrl+S" などの文字列表現</param>
+        public void ApplyShortcut(ToolStripMenuItem menuItem, string shortcutString)
+        {
+            if (menuItem == null) throw new ArgumentNullException(nameof(menuItem));
+            if (string.IsNullOrWhiteSpace(shortcutString)) return;
+
+            try
+            {
+                // TypeDescriptorを使って、文字列をKeys列挙体に変換する
+                // これが最も標準的で強力なコンバーターよ
+                TypeConverter converter = TypeDescriptor.GetConverter(typeof(Keys));
+
+                // ConvertFromString は "Ctrl+S" を Keys.Control | Keys.S に変換してくれる
+                Keys keys = (Keys)converter.ConvertFromString(shortcutString);
+
+                // メニューにセット
+                menuItem.ShortcutKeys = keys;
+
+                // ユーザーにショートカットを表示するかどうか（基本はtrueでしょ）
+                menuItem.ShowShortcutKeys = true;
+            }
+            catch (Exception ex)
+            {
+                // ここで握りつぶすか、ログを吐くかはあんたの設計次第だけど、
+                // 無効な文字列でアプリをクラッシュさせるのだけは避けなさい。
+                Console.WriteLine($"警告: ショートカット '{shortcutString}' の解析に失敗したわ。理由: {ex.Message}");
+
+                // 失敗時はショートカットなしにする等のフォールバック
+                menuItem.ShortcutKeys = Keys.None;
+            }
         }
     }
 }

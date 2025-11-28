@@ -6,7 +6,7 @@ using WinFormsApp2.Views;
 
 namespace WinFormsApp2
 {
-    partial class Form1 : Form
+    partial class Form1 : ModernForm
     {
 
 

@@ -14,13 +14,13 @@ namespace WinFormsApp2.Services
             _view = view;
         }
 
-        public void AddMenuItem(string path, string text, EventHandler action)
+        public void AddMenuItem(string path, string text, EventHandler action, string shortcut = "")
         {
             // Viewに「メニュー追加して」と頼む
             // (IMainViewにAddPluginMenuを追加する必要があるわね)
             _view.InvokeOnUI(() =>
             {
-                _view.AddPluginMenu(path, text, action);
+                _view.AddPluginMenu(path, text, action,shortcut);
             });
         }
 

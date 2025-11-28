@@ -22,7 +22,7 @@ namespace LocalAiPlugin
             _ollamaManager = new OllamaManager();
 
             // 1. メニュー追加
-            app.AddMenuItem("Tools", "AI要約 (Local)", OnSummarizeClicked);
+            app.AddMenuItem("Tools", "AI要約 (Local)", OnSummarizeClicked, "Ctrl+Alt+I");
 
             // 2. ★Ollama起動！ (Fire and Forget)
             // Initializeは同期メソッドだから、待たずに裏で走らせる
