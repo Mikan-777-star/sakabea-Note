@@ -10,6 +10,7 @@
     <Title>サカベアーノート</Title>
     <PackageIcon>2AFw_K-t_400x400.jpg</PackageIcon>
     <Company>4班</Company>
+	  <WindowsPackageType>None</WindowsPackageType>
   </PropertyGroup>
 
   <ItemGroup>
@@ -34,5 +35,4 @@
   <ItemGroup>
     <ProjectReference Include="..\WinFormApp2.PluginBase\WinFormApp2.PluginBase.csproj" />
   </ItemGroup>
-
 </Project>

@@ -61,10 +61,10 @@ namespace WinFormsApp2
                 this.FormBorderStyle = FormBorderStyle.None; // 枠なし
                 this.DoubleBuffered = true; // チラつき完全防止
                 this.ResizeRedraw = true;   // リサイズ時の再描画
-                this.Padding = new Padding(1); // 境界線を描く隙間を作る
-
-                // 初期テーマ適用 (とりあえずライトモード。後でSetThemeで変えられる)
-                ApplyTheme(false);
+                                            //this.Padding = new Padding(1); // 境界線を描く隙間を作る
+            this.Padding = new Padding(1, 0, 1, 1);
+            // 初期テーマ適用 (とりあえずライトモード。後でSetThemeで変えられる)
+            ApplyTheme(false);
                 Load += (s, e) => InitializeModernTitleBar();
             }
 

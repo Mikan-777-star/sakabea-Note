@@ -58,6 +58,7 @@ namespace WinFormsApp2
             string initialPath = settings.LastWorkspacePath ?? Directory.GetCurrentDirectory();
 
             this.Load += Form1_Load;
+            
             InitializeCustomUI();
             
         }
@@ -68,6 +69,7 @@ namespace WinFormsApp2
         // --- IMainView の実装 ---
 
         // 1. イベントの定義 (Presenterが購読する)
+        public event DragEventHandler DragEve;
         public event EventHandler LoadRequested;
         public event EventHandler<string> FileSelected;
         public event EventHandler SaveRequested;
@@ -87,7 +89,7 @@ namespace WinFormsApp2
 
         public event EventHandler ExportHtmlRequested;
         public event EventHandler ExportPdfRequested;
-
+        public event EventHandler CommandPaletteRequested;
         private Panel _dirHeaderPanel = null!;
         private Label _dirTitleLabel = null!;
         private Button _refreshTreeButton = null!;

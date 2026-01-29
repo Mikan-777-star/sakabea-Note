@@ -342,7 +342,10 @@ namespace WinFormsApp2
             this.noteEditorPanel.DocumentContentChanged += NoteEditorPanel_DocumentContentChanged;
             this.noteEditorPanel.ImagePasteRequested += (s, img) => ImagePasteRequested?.Invoke(this, img);
             //this.noteEditorPanel.BringToFront(); // タブより手前に来ないように注意、順序はAdd順に依存するが念のため確認が必要
-
+            noteEditorPanel.DragEve += (s, e) =>
+            {
+                DragEve?.Invoke(s, e);
+            };
             // --- Right Panel (Info) ---
             //this.rightInfoPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.MistyRose, Padding = new Padding(10) };
             //this.rightInfoPanel.Controls.Add(new Label { Text = "本日の予定", Dock = DockStyle.Top, Font = new Font("Meiryo UI", 12F, FontStyle.Bold), Height = 30 });
@@ -416,6 +419,8 @@ namespace WinFormsApp2
             // ダッシュボードのリンククリックを中継
             this.dashboardPanel.LinkClicked += (s, path) => DashboardLinkClicked?.Invoke(this, path);
             this.FormClosing += Form1_FormClosing;
+
+
         }
     }
 }

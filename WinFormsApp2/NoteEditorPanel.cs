@@ -143,7 +143,38 @@ namespace WinFormsApp2.NoteApp.UI
             // 順序調整：Panelを一番上に持ってくる（Controlsのインデックス0にする）
             this.SplitterContainer.Panel1.Controls.SetChildIndex(_searchPanel, 0);
         }
+        public Image LoadImageLegacySafe(string filePath)
+        {
+            if (!File.Exists(filePath)) throw new FileNotFoundException("ファイルがないわよ。", filePath);
 
+            // FileStreamを使って読み込むことで、細かく制御する
+            using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+            {
+                // Image.FromStreamはストリームを開いたままにする必要がある仕様があるため、
+                // メモリストリームにコピーして、元のファイルストリームは即座に閉じる（ロック解除）。
+                using (var ms = new MemoryStream())
+                {
+                    fs.CopyTo(ms);
+                    ms.Position = 0; // 巻き戻しを忘れないこと
+
+                    // バリデーション：本当に画像データか？
+                    try
+                    {
+                        // ストリームから生成。ただし、このImageが生きてる間msも必要な場合があるため
+                        // 完全な切り離しのために新しいBitmapとしてクローンするのが最も安全な防衛策。
+                        using (var tempImage = Image.FromStream(ms))
+                        {
+                            return new Bitmap(tempImage);
+                        }
+                    }
+                    catch (ArgumentException)
+                    {
+                        // System.Drawingは無効な画像の場合にArgumentExceptionを投げるという不親切な設計よ
+                        throw new InvalidDataException("指定されたファイルは有効な画像フォーマットじゃないわ。");
+                    }
+                }
+            }
+        }
         /// <summary>
         /// エディタ上でのキー操作イベント
         /// </summary>
@@ -173,6 +204,36 @@ namespace WinFormsApp2.NoteApp.UI
                         ImagePasteRequested?.Invoke(this, img);
 
                         img.Dispose();
+                    }
+                }
+                if (Clipboard.ContainsFileDropList())
+                {
+                    // 標準の貼り付け処理をキャンセル（これをしないと画像がそのままRichTextBoxに入ろうとして変になる）
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+
+                    var files = Clipboard.GetFileDropList();
+                    foreach (var item in files)
+                    {
+                        if (item == null) return;
+                        string originalFileName = Path.GetFileName(item);
+                        string ext = Path.GetExtension(originalFileName).ToLower();
+                        if (ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".gif" && ext != ".bmp" && ext != ".webp")
+                        {
+                            return;
+                        }
+                        try
+                        {
+
+                            Image? img = LoadImageLegacySafe(item);
+                            if (img != null)
+                            {
+                                ImagePasteRequested?.Invoke(this, img);
+                                img.Dispose();
+                            }
+                        }
+                        catch (Exception ex) { }
+
                     }
                 }
                 // テキストの場合は何もしない（標準のペースト動作に任せる）
@@ -653,8 +714,12 @@ namespace WinFormsApp2.NoteApp.UI
             }
         }
 
+        public event DragEventHandler DragEve;
         private void EditorTextBox_DragDrop(object? sender, DragEventArgs e)
         {
+            //e.SuppressKeyPress = true;
+            //e.Handled = true;
+
             if (e.Data == null) return;
             object? data = e.Data.GetData(DataFormats.FileDrop);
             if(data == null) return;
@@ -670,44 +735,13 @@ namespace WinFormsApp2.NoteApp.UI
             {
                 return;
             }
-
-            // 1. サニタイズ
-            string safeFileName = originalFileName.Replace(" ", "_");
-
-            // ★ 変更点: assetsフォルダのパスを構築
-            string assetsDir = Path.Combine(Directory.GetCurrentDirectory(), "assets");
-
-            // ★ フォルダがなければ作成（これがHousekeepingよ）
-            if (!Directory.Exists(assetsDir))
+            Image? img = LoadImageLegacySafe(sourcePath);
+            if (img != null)
             {
-                Directory.CreateDirectory(assetsDir);
+                ImagePasteRequested?.Invoke(this, img);
+                img.Dispose();
             }
 
-            // ★ 保存先パスを assets 内に変更
-            string destPath = Path.Combine(assetsDir, safeFileName);
-
-            try
-            {
-                if (!File.Exists(destPath))
-                {
-                    File.Copy(sourcePath, destPath);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"画像の取り込みに失敗しました: {ex.Message}");
-                return;
-            }
-
-            EditorTextBox.Focus();
-            int selectionIndex = EditorTextBox.SelectionStart;
-
-            // ★ 変更点: Markdownパスに "assets/" を付与
-            // これで標準的な相対パス構造になるわ。
-            string insertText = $"![{originalFileName}](assets/{safeFileName})";
-
-            EditorTextBox.Text = EditorTextBox.Text.Insert(selectionIndex, insertText);
-            EditorTextBox.SelectionStart = selectionIndex + insertText.Length;
         }
 
         // UserControlが破棄されるときの処理（重要）

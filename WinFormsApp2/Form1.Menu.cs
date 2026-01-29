@@ -66,7 +66,20 @@ namespace WinFormsApp2
             var themechange = new ToolStripMenuItem("テーマ変更");
             themechange.Click += (s, e) => { ThemeChanged?.Invoke(s, e); };
             viewMenu.DropDownItems.Add(themechange);
+            // Form1.cs - InitializeCustomUI
 
+            // 表示メニューあたりに追加
+            var paletteItem = new ToolStripMenuItem("コマンドパレット(&P)...");
+            paletteItem.ShortcutKeys = Keys.Control | Keys.Shift | Keys.P;
+
+            // Presenterに通知するイベントが必要ね
+            // IMainViewに event EventHandler CommandPaletteRequested; を追加して、
+            // Presenterで _view.CommandPaletteRequested += (s,e) => ShowCommandPalette(); と繋ぐのが正解。
+
+            // ★簡易実装: ここでイベント発火
+            paletteItem.Click += (s, e) => CommandPaletteRequested?.Invoke(this, EventArgs.Empty);
+
+            viewMenu.DropDownItems.Add(paletteItem);
         }
         private void ChangeFontSize(float delta)
         {

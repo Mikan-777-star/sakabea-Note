@@ -112,6 +112,11 @@ namespace WinFormsApp2.Views
 
         public string GetSelectedEditorText();
 
+        event EventHandler CommandPaletteRequested;
+
+
+        event DragEventHandler DragEve;
+        void Close();
     }
 
     // ツリー表示用の軽量なデータモデル（ViewModel的なもの）

@@ -3,9 +3,11 @@ using System.ComponentModel;
 using System.IO;
 using System.Text;
 using System.Threading;
+using System.Windows.Forms;
+using WinFormApp2.PluginBase;
+using WinFormsApp2.NoteApp.UI;
 using WinFormsApp2.Services;
 using WinFormsApp2.Views;
-using WinFormApp2.PluginBase;
 
 namespace WinFormsApp2.Presenters
 {
@@ -51,7 +53,65 @@ namespace WinFormsApp2.Presenters
             _view.FileTreeRefreshRequested += OnFileTreeRefreshRequested;
             _view.ExportHtmlRequested += OnExportHtmlRequested;
             _view.ExportPdfRequested += OnExportPdfRequested;
+            // コンストラクタ
+            _view.CommandPaletteRequested += (s, e) => ShowCommandPalette();
+            _view.DragEve += (s, e) =>
+            {
 
+                if (e.Data == null) return;
+                object? data = e.Data.GetData(DataFormats.FileDrop);
+                if (data == null) return;
+                string[] files = (string[])data;
+                if (files == null || files.Length == 0) return;
+
+                string sourcePath = files[0];
+                string originalFileName = Path.GetFileName(sourcePath);
+
+                // 拡張子チェック
+                string ext = Path.GetExtension(originalFileName).ToLower();
+                if (ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".gif" && ext != ".bmp" && ext != ".webp")
+                {
+                    return;
+                }
+
+                // 1. サニタイズ
+                string safeFileName = originalFileName.Replace(" ", "_");
+
+                // ★ 変更点: assetsフォルダのパスを構築Direcory.Currentdirectory();
+                string assetsDir = Path.Combine(fileManager.CurrentDirectory, "assets");
+
+                // ★ フォルダがなければ作成（これがHousekeepingよ）
+                if (!Directory.Exists(assetsDir))
+                {
+                    Directory.CreateDirectory(assetsDir);
+                }
+
+                // ★ 保存先パスを assets 内に変更
+                string destPath = Path.Combine(assetsDir, safeFileName);
+
+                try
+                {
+                    if (!File.Exists(destPath))
+                    {
+                        File.Copy(sourcePath, destPath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"画像の取り込みに失敗しました: {ex.Message}");
+                    return;
+                }
+
+                //EditorTextBox.Focus();
+                //int selectionIndex = EditorTextBox.SelectionStart;
+
+                // ★ 変更点: Markdownパスに "assets/" を付与
+                // これで標準的な相対パス構造になるわ。
+                string insertText = $"![{originalFileName}](assets/{safeFileName})";
+                _view.InsertTextAtCursor(insertText);
+                //EditorTextBox.Text = EditorTextBox.Text.Insert(selectionIndex, insertText);
+                //EditorTextBox.SelectionStart = selectionIndex + insertText.Length;
+            };
             _backupTimer = new System.Threading.Timer(OnBackupTick, null, 60000, 60000);
         }
 
@@ -738,6 +798,20 @@ namespace WinFormsApp2.Presenters
             // ※ Serviceクラスなどが IDisposable を持っているなら、ここですべて呼ぶ
             // _searchReportService がもし IDisposable なら呼ぶ (今は違うから不要)
         }
+
+        const string Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+        string GetRandomString(int length)
+        {
+            var sb = new StringBuilder(length);
+            for (int i = 0; i < length; i++)
+            {
+                // Random.Shared はスレッドセーフでインスタンス化不要
+                int index = Random.Shared.Next(Chars.Length);
+                sb.Append(Chars[index]);
+            }
+            return sb.ToString();
+        }
         private void OnImagePasteRequested(object? sender, System.Drawing.Image image)
         {
             try
@@ -750,7 +824,7 @@ namespace WinFormsApp2.Presenters
                 }
 
                 // 2. ユニークなファイル名を生成 (image-20251125-123456.png)
-                string fileName = $"image-{DateTime.Now:yyyyMMdd-HHmmss}.png";
+                string fileName = $"image-{DateTime.Now:yyyyMMdd-HHmmss}-{GetRandomString(10)}.png";
                 string savePath = System.IO.Path.Combine(assetsDir, fileName);
 
                 // 3. 画像を保存
@@ -892,6 +966,43 @@ namespace WinFormsApp2.Presenters
             catch (Exception ex)
             {
                 _view.ShowError($"PDF生成エラー: {ex.Message}");
+            }
+        }
+        // MainPresenter.cs
+
+        private void ShowCommandPalette()
+        {
+            // 1. コマンドリストの定義
+            // (頻繁に呼ぶならフィールドにキャッシュしてもいいけど、動的な状態もあるから都度生成でもOK)
+            var commands = new List<AppCommand>
+    {
+        new AppCommand("Save", "保存 (Save)", () => OnSaveRequested(this, EventArgs.Empty)),
+        new AppCommand("Theme", "ダークモード切替 (Toggle Theme)", () => ToggleTheme()),
+        new AppCommand("ReloadTree", "ファイルツリー更新 (Refresh Tree)", () => LoadFileTree()),
+        new AppCommand("OpenFolder", "フォルダを開く... (Open Folder)", () => OnChangeFolderRequested(this, EventArgs.Empty)),
+        new AppCommand("OpenDateFile", "今日のファイルを開く", ()=> OnDateSelected(null, DateTime.Today)),
+        //new AppCommand("ToggleConsole", "ターミナル表示切替 (Toggle Terminal)", () => _view.ToggleConsoleVisibility()),
+        new AppCommand("Quit", "終了 (Quit)", () => _view.Close()),
+        
+        // 編集系
+        new AppCommand("InsertDate", "日付を挿入 (Insert Date)", () =>
+        {
+            _view.InsertTextAtCursor(DateTime.Now.ToString("yyyy-MM-dd"));
+        }),
+        
+        // AI系 (プラグイン経由のコマンドも本当はここに入れたいけど、今回は本体機能だけ)
+        // ...
+    };
+
+            // 2. パレットを表示 (モーダル)
+            using (var palette = new CommandPaletteForm(commands, _themeService.IsDarkMode))
+            {
+                // ★親(Form1)の真ん中に出す
+                if (palette.ShowDialog((Form)_view) == DialogResult.OK)
+                {
+                    // 3. 選ばれたコマンドを実行
+                    palette.SelectedCommand?.Execute();
+                }
             }
         }
     }
